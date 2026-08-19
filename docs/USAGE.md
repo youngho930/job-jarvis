@@ -23,9 +23,60 @@ venv\Scripts\activate
 
 ---
 
-## 1. 공고 텍스트 확보
+## 1. 공고 수집 (자동)
 
-### 1-1. 브라우저에서 복사
+워크넷 공채속보 API로 키워드에 맞는 공고를 자동으로 찾는다.
+
+```powershell
+python -m src.collector AI 자동화 데이터 품질 DX
+```
+
+키워드는 몇 개든 띄어쓰기로 나열하면 된다. 공고 제목이나 회사명에
+하나라도 포함되면 수집한다.
+
+### 정상 출력
+
+```
+조회: 100건 (전체 245건 중 1페이지)
+  + [중견기업] 회사명 — 공고 제목
+    마감 2026-08-23 | https://...
+신규 등록: 5건
+```
+
+수집된 공고는 **상태 `discovered`(공고 발견)** 로 DB에 들어간다.
+이미 있는 공고는 건너뛰므로 매일 돌려도 중복이 안 생긴다.
+
+### 수집되는 범위
+
+대기업·공기업·공공기관·중견기업·외국계기업의 **공채 정보**다.
+개인 계정은 워크넷의 일반 채용정보 API를 쓸 수 없어 공채속보만 가능하다.
+
+중소기업·스타트업 공고는 사람인 등에서 직접 찾아 2단계로 넘어간다.
+
+### 키워드 조합 예시
+
+| 목적 | 키워드 |
+|---|---|
+| AI·자동화 직무 | `AI 자동화 데이터 DX AX` |
+| 품질 직무 | `품질 QC QA 검사 신뢰성` |
+| 제조 DX | `스마트팩토리 제조 생산기술 MES` |
+| 특정 회사 | `삼성 SK 현대` |
+
+---
+
+## 2. 공고 텍스트 확보
+
+수집기는 **목록만** 가져온다. 자격요건·우대사항은 직접 확보해야 한다.
+
+### 2-1. 목록에서 URL 확인
+
+```powershell
+python -m src.cli
+```
+
+각 공고 아래에 `→ https://...` 로 링크가 표시된다.
+
+### 2-2. 브라우저에서 복사
 
 공고 페이지에서 **F12** → **Console** 탭 → 아래 입력 후 엔터.
 
@@ -35,7 +86,7 @@ copy(document.body.innerText)
 
 > "Allow pasting" 경고가 뜨면 `allow pasting` 을 타이핑하고 엔터 친 뒤 다시 시도. 한 번만 하면 된다.
 
-### 1-2. 표가 있으면 추가로
+### 2-3. 표가 있으면 추가로
 
 자격요건·우대사항이 표 안에 있으면 위 명령으로는 누락된다. 추가 실행.
 
@@ -43,7 +94,7 @@ copy(document.body.innerText)
 copy([...document.querySelectorAll('td,th')].map(c=>c.innerText.trim()).join('\n---\n'))
 ```
 
-### 1-3. iframe 안에 있으면
+### 2-4. iframe 안에 있으면
 
 사람인 등은 본문이 iframe에 있는 경우가 많다.
 
@@ -51,16 +102,16 @@ copy([...document.querySelectorAll('td,th')].map(c=>c.innerText.trim()).join('\n
 copy([document.body.innerText, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument.body.innerText } catch(e) { return '' } })].join('\n\n=== FRAME ===\n\n'))
 ```
 
-### 1-4. 다 안 되면
+### 2-5. 다 안 되면
 
 **그냥 화면 보고 타이핑한다.** 자격요건·우대사항은 보통 각 5줄 안팎이라 5분이면 된다.
 여기서 시간 쓰지 말 것.
 
 ---
 
-## 2. txt 파일 만들기
+## 3. txt 파일 만들기
 
-### 2-1. 파일 생성
+### 3-1. 파일 생성
 
 파일명 규칙: `회사명_직무.txt` — **소문자·영문·언더스코어만.**
 
@@ -69,7 +120,7 @@ New-Item data\jobs\회사명_직무.txt
 code data\jobs\회사명_직무.txt
 ```
 
-### 2-2. 내용 붙여넣고 이 형식으로 정리
+### 3-2. 내용 붙여넣고 이 형식으로 정리
 
 ```
 [회사] (주)회사명
@@ -89,7 +140,7 @@ code data\jobs\회사명_직무.txt
 - 
 ```
 
-### 2-3. 체크리스트
+### 3-3. 체크리스트
 
 - [ ] `[회사]`, `[공고명]` 이 있는가 → **없으면 에러로 중단됨**
 - [ ] `[마감일]` 을 `YYYY-MM-DD` 로 적었는가 → `D-14` 같은 표기는 파서가 못 읽음
@@ -98,9 +149,11 @@ code data\jobs\회사명_직무.txt
 
 저장은 **Ctrl + S**.
 
+> 회사명은 **DB에 등록된 것과 똑같이** 적는다. 다르면 같은 공고가 두 건으로 들어간다.
+
 ---
 
-## 3. 공고 파싱
+## 4. 공고 파싱
 
 ```powershell
 python -m src.jd_parser data/jobs/회사명_직무.txt
@@ -126,13 +179,13 @@ txt에 해당 내용이 없다는 뜻. **2단계로 돌아가서 표 내용을 �
 
 ---
 
-## 4. 자소서 초안 생성
+## 5. 자소서 초안 생성
 
 ```powershell
 python -m src.draft data/jobs/회사명_직무.json
 ```
 
-> **주의**: `.txt` 가 아니라 **`.json`** 을 넣는다. 3단계가 만든 결과물이다.
+> **주의**: `.txt` 가 아니라 **`.json`** 을 넣는다. 4단계가 만든 결과물이다.
 
 30초~1분 걸린다. 그동안 출력이 없어도 정상.
 
@@ -154,7 +207,7 @@ DB 갱신 → id=2 | 상태: 초안 생성
 
 ---
 
-## 5. 초안 검토 — 여기가 제일 중요
+## 6. 초안 검토 — 여기가 제일 중요
 
 **AI 초안은 60% 완성품이다. 나머지 40%는 직접 한다.**
 
@@ -167,28 +220,30 @@ code data\drafts\
 1. **소리 내어 읽기** — 눈으로는 안 걸리는 어색함이 입으로 읽으면 걸린다
 2. **면접 시뮬레이션** — 각 문단마다 "이거 물어보면 뭐라고 답하지?" 답이 막히면 그 문장은 빼거나 고친다
 3. **숫자 검증** — 설명 못 하는 수치는 독이다
-4. **회사명 확인** — 다른 회사 이름이 남아있지 않은지
-5. **글자 수** — 사람인 등은 문항별 제한이 있다
+4. **안 해본 기술이 등장하지 않는지** — 공고 키워드를 AI가 끌어다 쓸 수 있다
+5. **회사명 확인** — 다른 회사 이름이 남아있지 않은지
+6. **글자 수** — 사람인 등은 문항별 제한이 있다
 
 ### 자주 나오는 수정 지점
 
 - 시점 표현("최근", "2026년 8월부터") → 애매하게 하거나 삭제
 - 같은 경험이 여러 문항에 중복 → 하나만 남기기
+- 안 써본 기술 언급 → 삭제하거나 일반화
 - 맺음말이 평범함 → 본인 문장으로 다시 쓰기
 
 ---
 
-## 6. 지원하고 상태 기록
+## 7. 지원하고 상태 기록
 
 지원을 마쳤으면 DB에 반영한다. 세 가지 방법 중 아무거나.
 
 ### 방법 A — 메일 버튼 (가장 편함)
 
-4단계에서 온 메일의 **"지원 완료로 표시"** 버튼 클릭.
+5단계에서 온 메일의 **"지원 완료로 표시"** 버튼 클릭.
 단, 승인 서버가 켜져 있어야 한다.
 
 ```powershell
-uvicorn src.server:app --reload
+uvicorn src.server:app
 ```
 
 ### 방법 B — 대시보드
@@ -218,15 +273,17 @@ python -m src.cli set 2 applied "사람인을 통해 지원"
 | `interview` | 면접 예정 |
 | `closed` | 종료 |
 
+마감이 지났거나 지원을 포기한 건은 `closed` 로 정리하면 목록이 깔끔해진다.
+
 ---
 
-## 7. 현황 확인
+## 8. 현황 확인
 
 ### 터미널
 
 ```powershell
-python -m src.cli          # 전체 목록
-python -m src.cli stats    # 통계 (통과율)
+python -m src.cli                # 전체 목록 (공고 URL 포함)
+python -m src.cli stats          # 통계 (통과율)
 python -m src.cli list applied   # 특정 상태만
 ```
 
@@ -250,14 +307,28 @@ python -m src.notify deadline 7    # D-7 이내 마감 알림
 ## 전체 흐름 요약
 
 ```
-1. 브라우저 F12 → copy(document.body.innerText)
-2. data/jobs/회사명_직무.txt 에 붙여넣고 정리
-3. python -m src.jd_parser data/jobs/회사명_직무.txt
-4. python -m src.draft data/jobs/회사명_직무.json
-5. data/drafts/ 초안 직접 검토·수정
-6. 지원 후 상태를 applied 로 변경
-7. python -m src.cli 로 현황 확인
+1. python -m src.collector AI 자동화 품질     ← 공고 수집 (자동)
+2. python -m src.cli                          ← 목록·URL 확인
+3. 브라우저 F12 → copy(document.body.innerText)
+4. data/jobs/회사명_직무.txt 에 붙여넣고 정리
+5. python -m src.jd_parser data/jobs/회사명_직무.txt
+6. python -m src.draft data/jobs/회사명_직무.json
+7. data/drafts/ 초안 직접 검토·수정           ← 가장 중요
+8. 지원 후 상태를 applied 로 변경
 ```
+
+---
+
+## 터미널 몇 개를 켜둬야 하나
+
+| 터미널 | 언제 필요한가 |
+|---|---|
+| 일반 (명령 실행) | **거의 항상** |
+| `uvicorn` (승인 서버) | 메일 버튼을 쓸 때만 |
+| `streamlit` (대시보드) | 현황을 볼 때만 |
+
+**대부분은 일반 터미널 하나면 충분하다.** 상태 변경은 `cli` 로도 되고,
+대시보드는 하루 한 번 열어보면 된다.
 
 ---
 
@@ -268,6 +339,8 @@ python -m src.notify deadline 7    # D-7 이내 마감 알림
 | `No module named src.xxx` | 폴더가 다르거나 파일 없음 | `cd` 로 프로젝트 폴더 이동 |
 | `회사명 또는 직무명을 추출하지 못했습니다` | txt에 `[회사]`, `[공고명]` 없음 | txt 상단에 추가 |
 | `⚠️ 비어있는 필드` | 표 내용이 복사 안 됨 | txt에 자격요건·우대사항 보충 |
+| `개인회원은 사용할 수 없는 OPEN-API입니다` | 권한 밖 API 호출 | 공채속보 API만 사용 가능 |
+| `.env에 WORKNET_API_KEY를 설정하세요` | 키 미등록 | `.env` 에 인증키 추가 |
 | `JSONDecodeError` | JSON 문법 오류 (쉼표 등) | 알려주는 줄 번호로 이동해 확인 |
 | `SMTPAuthenticationError` | 앱 비밀번호 문제 | `.env` 의 16자리 확인 (공백 제거) |
 | 아무 반응 없음 | 정상 종료했거나 조건 미충족 | 로그·출력 메시지 확인 |
@@ -306,7 +379,7 @@ python -m src.notify deadline 7    # D-7 이내 마감 알림
 
 ### 경험이 추가되면
 
-`data/experiences.json` 에 원자를 추가한다. 형식은 기존 항목 참고.
+`data/experiences.json` 에 원자를 추가한다. 형식은 `experiences.example.json` 참고.
 **`facts` 에는 사실만.** 여기 없는 내용은 자소서에 등장할 수 없다.
 
 수정 후 문법 검사:
@@ -324,14 +397,32 @@ python -c "import json;d=json.load(open('data/experiences.json',encoding='utf-8-
 
 `src/jd_parser.py` 의 `SYSTEM` 에 규칙을 추가한다.
 
+### 수집 결과가 너무 많거나 적으면
+
+키워드를 조정한다. 좁히려면 구체적인 단어를, 넓히려면 일반적인 단어를 쓴다.
+페이지 수를 늘리려면 `collector.py` 의 `collect(keywords, pages=3)` 값을 바꾼다.
+
+---
+
+## 코드를 수정했으면
+
+```powershell
+git add .
+git commit -m "무엇을 바꿨는지"
+git push
+```
+
+커밋 메시지는 나중에 본인이 볼 기록이다. "수정" 보다
+"공고 파싱 시 빈 필드 경고 추가" 가 낫다.
+
 ---
 
 ## 백업
 
-`data/` 폴더 전체를 가끔 복사해두면 된다. 특히:
+GitHub에 코드가 올라가 있지만, **개인 데이터는 제외되어 있다.**
+아래 파일은 별도로 백업한다.
 
 - `data/experiences.json` — 가장 중요. 다시 만들기 어렵다
 - `data/jarvis.db` — 지원 이력
 - `data/notes.md` — 실험 기록
-
-`.env` 는 백업하되 **절대 공유하지 않는다.**
+- `.env` — 백업하되 **절대 공유하지 않는다**
