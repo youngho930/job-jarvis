@@ -1,0 +1,9 @@
+venv/
+.env
+__pycache__/
+*.db
+data/drafts/
+data/jobs/
+data/notes.md
+data/scheduler.log
+data/experiences.json

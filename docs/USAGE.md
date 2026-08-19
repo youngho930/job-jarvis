@@ -1,0 +1,337 @@
+# Job Jarvis 사용 매뉴얼
+
+공고 하나를 처리하는 전체 절차. 익숙해지면 5~10분이면 끝난다.
+
+---
+
+## 0. 터미널 준비
+
+VS Code를 열고 터미널에서 **항상 이 두 줄 먼저**.
+
+```powershell
+cd C:\Users\user\Desktop\job-jarvis
+venv\Scripts\activate
+```
+
+프롬프트가 이렇게 보이면 준비 완료.
+
+```
+(venv) PS C:\Users\user\Desktop\job-jarvis>
+```
+
+> `(venv)`가 없으면 패키지를 못 찾고, 폴더가 다르면 파일을 못 찾는다. 에러의 절반이 여기서 나온다.
+
+---
+
+## 1. 공고 텍스트 확보
+
+### 1-1. 브라우저에서 복사
+
+공고 페이지에서 **F12** → **Console** 탭 → 아래 입력 후 엔터.
+
+```javascript
+copy(document.body.innerText)
+```
+
+> "Allow pasting" 경고가 뜨면 `allow pasting` 을 타이핑하고 엔터 친 뒤 다시 시도. 한 번만 하면 된다.
+
+### 1-2. 표가 있으면 추가로
+
+자격요건·우대사항이 표 안에 있으면 위 명령으로는 누락된다. 추가 실행.
+
+```javascript
+copy([...document.querySelectorAll('td,th')].map(c=>c.innerText.trim()).join('\n---\n'))
+```
+
+### 1-3. iframe 안에 있으면
+
+사람인 등은 본문이 iframe에 있는 경우가 많다.
+
+```javascript
+copy([document.body.innerText, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument.body.innerText } catch(e) { return '' } })].join('\n\n=== FRAME ===\n\n'))
+```
+
+### 1-4. 다 안 되면
+
+**그냥 화면 보고 타이핑한다.** 자격요건·우대사항은 보통 각 5줄 안팎이라 5분이면 된다.
+여기서 시간 쓰지 말 것.
+
+---
+
+## 2. txt 파일 만들기
+
+### 2-1. 파일 생성
+
+파일명 규칙: `회사명_직무.txt` — **소문자·영문·언더스코어만.**
+
+```powershell
+New-Item data\jobs\회사명_직무.txt
+code data\jobs\회사명_직무.txt
+```
+
+### 2-2. 내용 붙여넣고 이 형식으로 정리
+
+```
+[회사] (주)회사명
+[공고명] 직무명
+[마감일] 2026-09-30
+
+## 담당업무
+- 
+- 
+
+## 자격요건
+- 
+- 
+
+## 우대사항
+- 
+- 
+```
+
+### 2-3. 체크리스트
+
+- [ ] `[회사]`, `[공고명]` 이 있는가 → **없으면 에러로 중단됨**
+- [ ] `[마감일]` 을 `YYYY-MM-DD` 로 적었는가 → `D-14` 같은 표기는 파서가 못 읽음
+- [ ] 담당업무·자격요건·우대사항 내용이 실제로 있는가
+- [ ] 사이드바의 다른 회사 공고, 광고를 지웠는가
+
+저장은 **Ctrl + S**.
+
+---
+
+## 3. 공고 파싱
+
+```powershell
+python -m src.jd_parser data/jobs/회사명_직무.txt
+```
+
+### 정상 출력
+
+```
+저장 완료 → data\jobs\회사명_직무.json
+DB 등록 → id=2 | (주)회사명 / 직무명
+{ ... JSON 내용 ... }
+```
+
+### 확인할 것
+
+- `required_skills`, `preferred_skills`, `responsibilities` 가 채워졌는가
+- `deadline` 이 `null` 이 아닌가
+
+### `⚠️ 비어있는 필드` 경고가 뜨면
+
+txt에 해당 내용이 없다는 뜻. **2단계로 돌아가서 표 내용을 보충**하고 다시 실행한다.
+경고를 무시하고 넘어가면 자소서가 부실해진다.
+
+---
+
+## 4. 자소서 초안 생성
+
+```powershell
+python -m src.draft data/jobs/회사명_직무.json
+```
+
+> **주의**: `.txt` 가 아니라 **`.json`** 을 넣는다. 3단계가 만든 결과물이다.
+
+30초~1분 걸린다. 그동안 출력이 없어도 정상.
+
+### 정상 출력
+
+```
+=== 선별된 경험 ===
+  [proj_erp_dashboard] ...
+=== 채워지지 않는 요구사항 ===
+  - ...
+자소서 초안 생성 중... (30초~1분 소요)
+초안 저장 → data\drafts\(주)회사명_직무명.md
+선별 근거 저장 → data\drafts\(주)회사명_직무명_meta.json
+DB 갱신 → id=2 | 상태: 초안 생성
+메일 발송 완료 → ...
+```
+
+메일함에도 초안 미리보기와 gaps가 도착한다.
+
+---
+
+## 5. 초안 검토 — 여기가 제일 중요
+
+**AI 초안은 60% 완성품이다. 나머지 40%는 직접 한다.**
+
+```powershell
+code data\drafts\
+```
+
+### 반드시 확인할 것
+
+1. **소리 내어 읽기** — 눈으로는 안 걸리는 어색함이 입으로 읽으면 걸린다
+2. **면접 시뮬레이션** — 각 문단마다 "이거 물어보면 뭐라고 답하지?" 답이 막히면 그 문장은 빼거나 고친다
+3. **숫자 검증** — 설명 못 하는 수치는 독이다
+4. **회사명 확인** — 다른 회사 이름이 남아있지 않은지
+5. **글자 수** — 사람인 등은 문항별 제한이 있다
+
+### 자주 나오는 수정 지점
+
+- 시점 표현("최근", "2026년 8월부터") → 애매하게 하거나 삭제
+- 같은 경험이 여러 문항에 중복 → 하나만 남기기
+- 맺음말이 평범함 → 본인 문장으로 다시 쓰기
+
+---
+
+## 6. 지원하고 상태 기록
+
+지원을 마쳤으면 DB에 반영한다. 세 가지 방법 중 아무거나.
+
+### 방법 A — 메일 버튼 (가장 편함)
+
+4단계에서 온 메일의 **"지원 완료로 표시"** 버튼 클릭.
+단, 승인 서버가 켜져 있어야 한다.
+
+```powershell
+uvicorn src.server:app --reload
+```
+
+### 방법 B — 대시보드
+
+```powershell
+streamlit run app.py
+```
+
+항목 펼치기 → 상태 선택 → 변경 버튼.
+
+### 방법 C — 터미널
+
+```powershell
+python -m src.cli set 2 applied "사람인을 통해 지원"
+```
+
+### 상태 값
+
+| 코드 | 의미 |
+|---|---|
+| `discovered` | 공고 발견 |
+| `parsed` | 분석 완료 |
+| `drafted` | 초안 생성 |
+| `applied` | 지원 완료 |
+| `passed` | 서류 합격 |
+| `failed` | 서류 불합격 |
+| `interview` | 면접 예정 |
+| `closed` | 종료 |
+
+---
+
+## 7. 현황 확인
+
+### 터미널
+
+```powershell
+python -m src.cli          # 전체 목록
+python -m src.cli stats    # 통계 (통과율)
+python -m src.cli list applied   # 특정 상태만
+```
+
+### 대시보드
+
+```powershell
+streamlit run app.py
+```
+
+브라우저에서 `http://localhost:8501`
+
+### 메일로 받기
+
+```powershell
+python -m src.notify weekly        # 주간 현황 요약
+python -m src.notify deadline 7    # D-7 이내 마감 알림
+```
+
+---
+
+## 전체 흐름 요약
+
+```
+1. 브라우저 F12 → copy(document.body.innerText)
+2. data/jobs/회사명_직무.txt 에 붙여넣고 정리
+3. python -m src.jd_parser data/jobs/회사명_직무.txt
+4. python -m src.draft data/jobs/회사명_직무.json
+5. data/drafts/ 초안 직접 검토·수정
+6. 지원 후 상태를 applied 로 변경
+7. python -m src.cli 로 현황 확인
+```
+
+---
+
+## 자주 만나는 에러
+
+| 에러 | 원인 | 해결 |
+|---|---|---|
+| `No module named src.xxx` | 폴더가 다르거나 파일 없음 | `cd` 로 프로젝트 폴더 이동 |
+| `회사명 또는 직무명을 추출하지 못했습니다` | txt에 `[회사]`, `[공고명]` 없음 | txt 상단에 추가 |
+| `⚠️ 비어있는 필드` | 표 내용이 복사 안 됨 | txt에 자격요건·우대사항 보충 |
+| `JSONDecodeError` | JSON 문법 오류 (쉼표 등) | 알려주는 줄 번호로 이동해 확인 |
+| `SMTPAuthenticationError` | 앱 비밀번호 문제 | `.env` 의 16자리 확인 (공백 제거) |
+| 아무 반응 없음 | 정상 종료했거나 조건 미충족 | 로그·출력 메시지 확인 |
+
+**에러가 나면 메시지를 끝까지 읽는다.** 파이썬 트레이스백은 아래에서 위로 읽으면 대부분 답이 있다.
+
+---
+
+## 기록해두면 좋은 것
+
+### `data/notes.md`
+
+공고를 돌릴 때마다 한 덩어리씩 추가한다.
+
+```markdown
+## 2026-08-20 | 회사명
+- 소요시간: N분
+- 파싱: 정상 / 문제
+- 선별: N개, 타당 여부
+- gaps: 
+- 문제:
+- 조치:
+```
+
+### 왜 기록하나
+
+- **소요시간** → "지원 1건당 N분 → M분" 이라는 성과 지표가 된다
+- **반복되는 gaps** → 다음에 채워야 할 역량이 보인다
+- **문제와 조치** → "프롬프트를 어떻게 개선했는가" 를 설명할 근거가 된다
+
+이 기록 자체가 포트폴리오다.
+
+---
+
+## 유지보수
+
+### 경험이 추가되면
+
+`data/experiences.json` 에 원자를 추가한다. 형식은 기존 항목 참고.
+**`facts` 에는 사실만.** 여기 없는 내용은 자소서에 등장할 수 없다.
+
+수정 후 문법 검사:
+
+```powershell
+python -c "import json;d=json.load(open('data/experiences.json',encoding='utf-8-sig'));print('원자',len(d),'개')"
+```
+
+### 자소서 품질이 마음에 안 들면
+
+`src/draft.py` 의 `WRITE_SYSTEM` 에 규칙을 한 줄 추가하고 다시 돌린다.
+바꾼 내용은 `data/notes.md` 에 기록.
+
+### 파싱이 부정확하면
+
+`src/jd_parser.py` 의 `SYSTEM` 에 규칙을 추가한다.
+
+---
+
+## 백업
+
+`data/` 폴더 전체를 가끔 복사해두면 된다. 특히:
+
+- `data/experiences.json` — 가장 중요. 다시 만들기 어렵다
+- `data/jarvis.db` — 지원 이력
+- `data/notes.md` — 실험 기록
+
+`.env` 는 백업하되 **절대 공유하지 않는다.**
