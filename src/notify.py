@@ -1,10 +1,11 @@
 """DB 상태를 읽어 알림 메일을 구성하고 발송한다."""
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.db import STATUS_LABELS, init_db, list_all
+from src.db import STATUS_LABELS, get_token, init_db, list_all
 from src.mailer import send
 
 # 메일 공통 스타일
@@ -26,7 +27,7 @@ STYLE = """
 """
 
 
-def days_left(deadline: str) -> int | None:
+def days_left(deadline):
     """마감까지 남은 일수. 계산할 수 없으면 None."""
     if not deadline:
         return None
@@ -37,7 +38,28 @@ def days_left(deadline: str) -> int | None:
         return None
 
 
-def notify_draft(company: str, position: str, draft_path: str, gaps: list) -> None:
+def extract_url(memo) -> str:
+    """memo 필드에서 공고 URL을 꺼낸다. 없으면 빈 문자열."""
+    text = str(memo or "")
+    if "http" not in text:
+        return ""
+    return text.split("| ")[-1].strip()
+
+
+def link_button(url: str, label: str = "공고 보기") -> str:
+    """파란 버튼 HTML. url이 없으면 빈 문자열."""
+    if not url:
+        return ""
+    return (
+        '<div style="margin-top:10px;">'
+        f'<a href="{url}" style="background:#1976d2; color:#fff; '
+        'padding:8px 16px; border-radius:5px; text-decoration:none; '
+        f'font-size:13px; display:inline-block;">{label}</a>'
+        "</div>"
+    )
+
+
+def notify_draft(company: str, position: str, draft_path: str, gaps: list, app_id=None) -> None:
     """자소서 초안이 생성됐을 때 검토 요청 메일을 보낸다."""
     preview = ""
     p = Path(draft_path)
@@ -48,14 +70,28 @@ def notify_draft(company: str, position: str, draft_path: str, gaps: list) -> No
     gap_html = ""
     if gaps:
         items = "".join(f"<li>{g}</li>" for g in gaps)
-        gap_html = f"""
-        <div class="gap">
-          <b>채워지지 않은 요구사항</b>
-          <ul style="margin:6px 0 0 0; padding-left:18px;">{items}</ul>
-          <div style="margin-top:8px; color:#888;">
-            면접에서 질문될 가능성이 높은 항목입니다.
-          </div>
-        </div>"""
+        gap_html = (
+            '<div class="gap"><b>채워지지 않은 요구사항</b>'
+            f'<ul style="margin:6px 0 0 0; padding-left:18px;">{items}</ul>'
+            '<div style="margin-top:8px; color:#888;">'
+            "면접에서 질문될 가능성이 높은 항목입니다.</div></div>"
+        )
+
+    buttons = ""
+    if app_id:
+        base = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+        token = get_token(app_id)
+        link = f"{base}/action?id={app_id}&token={token}&to="
+        buttons = (
+            '<div style="margin:20px 0;">'
+            f'<a href="{link}applied" style="background:#1976d2; color:#fff; '
+            "padding:12px 24px; border-radius:6px; text-decoration:none; "
+            'display:inline-block; margin-right:8px;">지원 완료로 표시</a>'
+            f'<a href="{link}closed" style="background:#757575; color:#fff; '
+            "padding:12px 24px; border-radius:6px; text-decoration:none; "
+            'display:inline-block;">보류/포기</a>'
+            "</div>"
+        )
 
     body = f"""{STYLE}
     <h2>자소서 초안이 준비되었습니다</h2>
@@ -66,6 +102,7 @@ def notify_draft(company: str, position: str, draft_path: str, gaps: list) -> No
       <code>{draft_path}</code>
     </div>
     {gap_html}
+    {buttons}
     <div class="card">
       <div class="label">미리보기</div>
       <div style="margin-top:8px; font-size:14px;">{preview}...</div>
@@ -93,14 +130,18 @@ def notify_deadlines(within: int = 3) -> None:
         return
 
     urgent.sort(key=lambda x: x[0])
+
     cards = ""
     for left, r in urgent:
-        cards += f"""
-        <div class="card urgent">
-          <b>D-{left}</b> &middot; {r['deadline']}<br>
-          <span style="font-size:16px;">{r['company']}</span><br>
-          <span class="label">{r['position']} &middot; 현재 {STATUS_LABELS[r['status']]}</span>
-        </div>"""
+        cards += (
+            '<div class="card urgent">'
+            f"<b>D-{left}</b> &middot; {r['deadline']}<br>"
+            f'<span style="font-size:16px;">{r["company"]}</span><br>'
+            f'<span class="label">{r["position"]} &middot; '
+            f'현재 {STATUS_LABELS[r["status"]]}</span>'
+            f"{link_button(extract_url(r['memo']))}"
+            "</div>"
+        )
 
     body = f"""{STYLE}
     <h2>마감 임박 공고 {len(urgent)}건</h2>
@@ -133,8 +174,14 @@ def notify_weekly() -> None:
     for r in rows:
         left = days_left(r["deadline"])
         dday = f"D-{left}" if left is not None and left >= 0 else "-"
+
+        company = r["company"]
+        url = extract_url(r["memo"])
+        if url:
+            company = f'<a href="{url}" style="color:#1976d2;">{company}</a>'
+
         trs += (
-            f"<tr><td>{r['company']}</td><td>{r['position']}</td>"
+            f"<tr><td>{company}</td><td>{r['position']}</td>"
             f"<td>{STATUS_LABELS[r['status']]}</td>"
             f"<td>{r['deadline'] or '-'}</td><td>{dday}</td></tr>"
         )

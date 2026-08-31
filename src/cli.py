@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 
 from src.db import STATUS_LABELS, init_db, list_all, set_status
-
+from src.db import check_eligible
 
 def show(status_filter: str = None) -> None:
     rows = list_all(status_filter)
@@ -42,6 +42,9 @@ def show(status_filter: str = None) -> None:
         if r["memo"] and "http" in str(r["memo"]):
             url = str(r["memo"]).split("| ")[-1]
             print(f"     → {url}")
+        ok, blockers = check_eligible(r)
+        if blockers:
+            print(f"     ⚠ 지원 불가: {', '.join(blockers)}")
 
     msg = f"\n총 {len(rows)}건"
     if hidden:

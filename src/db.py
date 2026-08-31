@@ -87,6 +87,13 @@ def init_db() -> None:
         conn.execute("ALTER TABLE applications ADD COLUMN token TEXT")
     except sqlite3.OperationalError:
         pass  # 이미 존재
+    
+        # 자격요건 컬럼 (이미 있으면 무시)
+    for col in ("min_experience INTEGER", "education TEXT", "language_required INTEGER"):
+        try:
+            conn.execute(f"ALTER TABLE applications ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     conn.close()
@@ -122,7 +129,8 @@ def upsert(company: str, position: str, **fields) -> int:
         app_id = row["id"]
 
     # 넘겨받은 필드만 갱신한다
-    allowed = {"status", "deadline", "jd_path", "draft_path", "applied_at", "memo"}
+    allowed = {"status", "deadline", "jd_path", "draft_path", "applied_at", "memo",
+               "min_experience", "education", "language_required"}
     for key, value in fields.items():
         if key in allowed and value is not None:
             conn.execute(
@@ -218,6 +226,35 @@ def find_by_token(app_id: int, token: str):
     row = cur.fetchone()
     conn.close()
     return row
+
+# 내 자격 조건 — 본인 상황에 맞게 수정
+MY_EXPERIENCE = 1        # 경력 연수 (1년 7개월 → 1)
+MY_EDUCATION = "초대졸"   # 고졸 / 초대졸 / 학사 / 석사
+MY_LANGUAGE = False      # 공인어학성적 보유 여부
+
+EDU_ORDER = {"무관": 0, "고졸": 1, "초대졸": 2, "학사": 3, "석사": 4}
+
+
+def check_eligible(row) -> tuple:
+    """
+    지원 가능 여부를 판정한다.
+    반환: (가능 여부, 막히는 이유 목록)
+    """
+    blockers = []
+
+    exp = row["min_experience"]
+    if exp is not None and exp > MY_EXPERIENCE:
+        blockers.append(f"경력 {exp}년 요구")
+
+    edu = row["education"]
+    if edu and edu in EDU_ORDER:
+        if EDU_ORDER[edu] > EDU_ORDER.get(MY_EDUCATION, 0):
+            blockers.append(f"{edu} 이상 요구")
+
+    if row["language_required"] and not MY_LANGUAGE:
+        blockers.append("공인어학성적 필요")
+
+    return (len(blockers) == 0, blockers)
 
 if __name__ == "__main__":
     init_db()

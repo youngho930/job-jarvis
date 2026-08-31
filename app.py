@@ -62,10 +62,17 @@ if urgent:
     urgent.sort(key=lambda x: x[0])
     st.subheader("마감 임박")
     for left, r in urgent:
-        st.warning(
-            f"**D-{left}** · {r['company']} / {r['position']} "
-            f"— 현재 {STATUS_LABELS[r['status']]}"
-        )
+        col_a, col_b = st.columns([6, 1])
+        with col_a:
+            st.warning(
+                f"**D-{left}** · {r['company']} / {r['position']} "
+                f"— 현재 {STATUS_LABELS[r['status']]}"
+            )
+        with col_b:
+            memo = str(r["memo"] or "")
+            if "http" in memo:
+                url = memo.split("| ")[-1].strip()
+                st.link_button("공고 보기", url, use_container_width=True)
     st.divider()
 
 # ── 지원 목록 ────────────────────────────────
@@ -95,6 +102,11 @@ for r in rows:
             st.write(f"**등록일** {r['created_at'][:10]}")
             if r["applied_at"]:
                 st.write(f"**지원일** {r['applied_at'][:10]}")
+                            # 공고 원문 링크
+            memo = str(r["memo"] or "")
+            if "http" in memo:
+                url = memo.split("| ")[-1].strip()
+                st.link_button("공고 보기", url)
 
             # gaps 표시
             if r["draft_path"]:

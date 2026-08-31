@@ -17,6 +17,9 @@ SYSTEM = """너는 채용 공고를 구조화하는 분석기다.
   "responsibilities": ["담당 업무 요약"],
   "keywords": ["공고에서 반복되거나 강조된 핵심 단어"],
   "culture_keywords": ["인재상/조직문화 관련 표현"],
+  "min_experience": "요구 경력 연수. 신입 가능하면 0, 명시 없으면 null",
+  "education": "최소 학력. 고졸/초대졸/학사/석사 중 하나. 무관이면 '무관', 명시 없으면 null",
+  "language_required": "공인어학성적(토익, 오픽 등)을 필수로 요구하면 true, 아니면 false",
   "deadline": "YYYY-MM-DD 또는 null"
 }
 
@@ -26,7 +29,9 @@ SYSTEM = """너는 채용 공고를 구조화하는 분석기다.
 - 입력에 사이드바 배너, 다른 회사의 추천 공고, 광고가 섞여 있을 수 있다.
   이는 모두 무시하고 제목에 명시된 단일 공고의 내용만 추출한다.
 - 마감일이 "D-14"처럼 상대 표기이거나 불명확하면 null로 둔다.
-- 설명, 인사말, 마크다운 코드펜스 없이 JSON만 출력한다."""
+- 설명, 인사말, 마크다운 코드펜스 없이 JSON만 출력한다.
+- min_experience는 숫자만. "경력 3년 이상" → 3, "신입/경력" → 0, "경력 무관" → 0
+- 자격요건에 명시되지 않은 항목은 추측하지 말고 null로 둔다"""
 
 
 def parse_jd(raw_text: str) -> dict:
@@ -60,15 +65,26 @@ def parse_file(txt_path: str) -> dict:
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"저장 완료 → {out_path}")
-    # DB에 등록
+        # DB에 등록
     init_db()
-    company = data.get("company") or "unknown"
-    position = data.get("position") or "unknown"
+    company = data.get("company")
+    position = data.get("position")
+
+    if not company or not position:
+        raise ValueError(
+            f"회사명 또는 직무명을 추출하지 못했습니다.\n"
+            f"  company={company}, position={position}\n"
+            f"→ txt 파일 상단에 [회사], [공고명] 을 추가하세요."
+        )
+
     app_id = upsert(
         company,
         position,
         deadline=data.get("deadline"),
         jd_path=str(out_path),
+        min_experience=data.get("min_experience"),
+        education=data.get("education"),
+        language_required=1 if data.get("language_required") else 0,
     )
     set_status(app_id, "parsed", "공고 파싱 완료")
     print(f"DB 등록 → id={app_id} | {company} / {position}")
