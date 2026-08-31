@@ -17,28 +17,39 @@ def log(msg: str) -> None:
 
 
 def run_daily() -> None:
-    """매일 아침 실행: 마감 임박 공고 확인."""
+    """매일 아침 실행: 공고 수집 → 만료 정리 → 마감 임박 알림."""
     log("일일 작업 시작")
     init_db()
 
+    # 1. 새 공고 수집
     try:
-        notify_deadlines(within=3)
-        log("마감 알림 처리 완료")
+        from src.collector import collect
+        collect(["AI", "자동화", "데이터", "품질", "DX"])
+        log("공고 수집 완료")
     except Exception:
-        log(f"마감 알림 실패:\n{traceback.format_exc()}")
+        log(f"공고 수집 실패:\n{traceback.format_exc()}")
 
-    # 마감 지난 미지원 건 정리 안내
+    # 2. 마감 지난 미지원 건 자동 정리
     try:
+        from src.db import set_status
         expired = [
             r for r in list_all()
             if r["status"] in ("discovered", "parsed", "drafted")
             and (d := days_left(r["deadline"])) is not None and d < 0
         ]
+        for r in expired:
+            set_status(r["id"], "closed", "마감 경과 자동 정리", force=True)
         if expired:
-            names = ", ".join(r["company"] for r in expired)
-            log(f"마감이 지난 미지원 공고 {len(expired)}건: {names}")
+            log(f"마감 경과 {len(expired)}건 자동 종료")
     except Exception:
-        log(f"만료 확인 실패:\n{traceback.format_exc()}")
+        log(f"만료 정리 실패:\n{traceback.format_exc()}")
+
+    # 3. 마감 임박 알림
+    try:
+        notify_deadlines(within=7)
+        log("마감 알림 처리 완료")
+    except Exception:
+        log(f"마감 알림 실패:\n{traceback.format_exc()}")
 
     log("일일 작업 종료")
 

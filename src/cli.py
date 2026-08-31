@@ -8,8 +8,16 @@ from src.db import STATUS_LABELS, init_db, list_all, set_status
 
 def show(status_filter: str = None) -> None:
     rows = list_all(status_filter)
+
+    # 필터를 지정하지 않으면 종료된 건은 숨긴다
+    hidden = 0
+    if status_filter is None:
+        before = len(rows)
+        rows = [r for r in rows if r["status"] != "closed"]
+        hidden = before - len(rows)
+
     if not rows:
-        print("등록된 지원 건이 없습니다.")
+        print("표시할 지원 건이 없습니다.")
         return
 
     today = datetime.now().date()
@@ -35,7 +43,10 @@ def show(status_filter: str = None) -> None:
             url = str(r["memo"]).split("| ")[-1]
             print(f"     → {url}")
 
-    print(f"\n총 {len(rows)}건")
+    msg = f"\n총 {len(rows)}건"
+    if hidden:
+        msg += f"  (종료 {hidden}건 숨김 — 보려면: python -m src.cli list closed)"
+    print(msg)
 
 
 def stats() -> None:
