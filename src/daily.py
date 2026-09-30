@@ -51,6 +51,14 @@ def run_daily() -> None:
     except Exception:
         log(f"마감 알림 실패:\n{traceback.format_exc()}")
 
+    # 4. Project Hub 동기화 (단계별 개수만). 실패해도 위 작업에 영향 없음.
+    #    예외 내용에는 주소가 섞일 수 있어 traceback 은 남기지 않는다.
+    try:
+        from src.hub_sync import sync_pipeline
+        sync_pipeline(log=log)
+    except Exception:
+        log("허브 동기화 실패")
+
     log("일일 작업 종료")
 
 
