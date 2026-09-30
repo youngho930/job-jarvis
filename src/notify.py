@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.db import STATUS_LABELS, get_token, init_db, list_all
+from src.db import STATUS_LABELS, get_conn, get_token, init_db, list_all
 from src.mailer import send
 
 # 메일 공통 스타일
@@ -151,6 +151,38 @@ def notify_deadlines(within: int = 3) -> None:
     print(f"마감 임박 {len(urgent)}건 알림 발송")
 
 
+def weekly_summary(rows) -> dict:
+    """
+    주간 요약 숫자를 센다. 현재 상태가 아니라 기록으로 센다.
+    (상태로 세면 마감이 지나 자동 종료된 미지원 공고까지 '지원 완료'로 잡힌다)
+    - 지원 완료: applied_at 이 있는 공고 (지원 후 종료된 것도 포함)
+    - 서류 통과: status_log 에 passed 또는 interview 로 바뀐 기록이 있는 공고
+    - 진행 중: 지원 안 했고 종료도 안 된 공고
+    - 미지원 종료: applied_at 없이 종료된 공고
+    """
+    ids = {r["id"] for r in rows}
+    conn = get_conn()
+    passed_ids = {
+        row["application_id"]
+        for row in conn.execute(
+            "SELECT DISTINCT application_id FROM status_log "
+            "WHERE to_status IN ('passed', 'interview')"
+        )
+    }
+    conn.close()
+
+    applied = sum(1 for r in rows if r["applied_at"])
+    passed = len(passed_ids & ids)
+    return {
+        "total": len(rows),
+        "in_progress": sum(1 for r in rows if not r["applied_at"] and r["status"] != "closed"),
+        "applied": applied,
+        "closed_unapplied": sum(1 for r in rows if not r["applied_at"] and r["status"] == "closed"),
+        "passed": passed,
+        "rate": f"{passed / applied * 100:.0f}%" if applied else "-",
+    }
+
+
 def notify_weekly() -> None:
     """전체 지원 현황을 요약해서 보낸다."""
     init_db()
@@ -159,16 +191,7 @@ def notify_weekly() -> None:
         print("등록된 지원 건이 없습니다.")
         return
 
-    counts = {}
-    for r in rows:
-        counts[r["status"]] = counts.get(r["status"], 0) + 1
-
-    applied = sum(
-        counts.get(s, 0)
-        for s in ("applied", "passed", "failed", "interview", "closed")
-    )
-    passed = counts.get("passed", 0) + counts.get("interview", 0)
-    rate = f"{passed / applied * 100:.0f}%" if applied else "-"
+    s = weekly_summary(rows)
 
     trs = ""
     for r in rows:
@@ -189,8 +212,9 @@ def notify_weekly() -> None:
     body = f"""{STYLE}
     <h2>주간 지원 현황</h2>
     <div class="card">
-      전체 <b>{len(rows)}</b>건 &middot; 지원 완료 <b>{applied}</b>건 &middot;
-      서류 통과 <b>{passed}</b>건 (통과율 {rate})
+      진행 중 <b>{s['in_progress']}</b>건 &middot; 지원 완료 <b>{s['applied']}</b>건 &middot;
+      미지원 종료 <b>{s['closed_unapplied']}</b>건 (전체 {s['total']}건)<br>
+      서류 통과 <b>{s['passed']}</b>건 (통과율 {s['rate']})
     </div>
     <table>
       <tr><th>회사</th><th>직무</th><th>상태</th><th>마감</th><th>D-day</th></tr>
