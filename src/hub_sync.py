@@ -10,6 +10,11 @@
 - result    결과: 지원한 공고 중 failed 기록이 있거나 종료(closed)된 공고
             (최종 합격 상태는 따로 없어서, 지원 후 종료를 결과 확정으로 본다)
 
+노션 대시보드 '오늘 한눈에' 위젯용 (Project Hub /api/briefing)
+- new_today 새 공고: 오늘(한국 날짜) 새로 등록된 공고
+- due_soon  마감 임박: 아직 지원 전(notify_deadlines 와 같은 상태)이고 마감이 0~3일 남은 공고
+            (아침 메일은 7일 기준이지만, 위젯은 정말 급한 것만 노란색으로 띄우려고 3일)
+
 사용: python -m src.hub_sync [--db 데이터베이스경로]
 """
 
@@ -24,13 +29,15 @@ from dotenv import load_dotenv
 
 import src.db as db
 from src.db import get_conn, list_all
-from src.notify import weekly_summary
+from src.notify import days_left, weekly_summary
 
 load_dotenv(override=True)
 
 KEY = "hub:pipeline"
 # 한국은 서머타임이 없어 +9 고정 (윈도우에 시간대 데이터가 없어도 동작)
 KST = timezone(timedelta(hours=9), "KST")
+DUE_SOON_DAYS = 3
+PENDING = ("discovered", "parsed", "drafted")  # 아직 지원 전
 
 
 def pipeline_counts() -> dict:
@@ -54,12 +61,22 @@ def pipeline_counts() -> dict:
         1 for r in rows
         if r["applied_at"] and (r["id"] in failed_ids or r["status"] == "closed")
     )
+    # created_at 은 PC 시각(한국)으로 "YYYY-MM-DD HH:MM:SS" 저장됨
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    new_today = sum(1 for r in rows if str(r["created_at"] or "").startswith(today))
+    due_soon = sum(
+        1 for r in rows
+        if r["status"] in PENDING
+        and (left := days_left(r["deadline"])) is not None and 0 <= left <= DUE_SOON_DAYS
+    )
     return {
         "saved": summary["in_progress"],
         "applied": summary["applied"],
         "screening": summary["passed"],
         "interview": len(interview_ids),
         "result": result,
+        "new_today": new_today,
+        "due_soon": due_soon,
         "updated_at": datetime.now(KST).isoformat(timespec="seconds"),
     }
 
